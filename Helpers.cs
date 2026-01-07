@@ -7,6 +7,7 @@ using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
+    // Copyright(c) [2026], [Sergey Dvortsov]
     public static class Helpers
     {
         public static Candle ToCandle(this KlineData kline)

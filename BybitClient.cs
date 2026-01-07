@@ -16,8 +16,9 @@ using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
+    // Copyright(c) [2026], [Sergey Dvortsov]
     /// <summary>
-    /// Клиент API Bybit
+    /// API client bybit
     /// </summary>
     public class BybitClient
     {
@@ -27,21 +28,18 @@ namespace Synapse.Crypto.Bybit
 
         private readonly TimeSpan candleBrake = TimeSpan.FromSeconds(5);
 
-
         public static BybitClient Instance { get; private set; }
 
         public BybitClient()
         {
-            market = new BybitMarketDataService(url: BybitConstants.HTTP_MAINNET_URL, debugMode: false);
+            market = new(url: BybitConstants.HTTP_MAINNET_URL, debugMode: false);
             Instance = this;
         }
-
-
 
         #region events
 
         /// <summary>
-        /// Событие обновления свечи или появления новой свечи
+        /// Event of candle update or new candle
         /// </summary>
         public event Action<string, TimeFrames, List<Candle>> CandleUpdate = delegate { };
 
@@ -53,15 +51,18 @@ namespace Synapse.Crypto.Bybit
         #endregion
 
         /// <summary>
-        /// Логгер
+        /// Logger
         /// </summary>
         public Logger Logger { get; private set; } = LogManager.GetCurrentClassLogger();
 
         /// <summary>
-        /// Список инструментов
+        /// List of instruments
         /// </summary>
         public List<BybitSecurity> Securities { get; private set; } = [];
 
+        /// <summary>
+        /// Subscriptions to streaming data
+        /// </summary>
         public Dictionary<string, Tuple<BybitLinearWebSocket, CancellationToken>> Subscriptions { get; private set; } = [];
 
         public static void Init()
@@ -70,9 +71,9 @@ namespace Synapse.Crypto.Bybit
         }
 
         /// <summary>
-        /// Получает инфорцацию об инструментах
+        /// Loading instrument information.
         /// </summary>
-        /// <param name="categories">тип инструмента или null для всех инструментов</param>
+        /// <param name="categories">instrument type or null for all instruments</param>
         /// <returns></returns>
         /// <exception cref="NullReferenceException"></exception>
         public async Task<List<BybitSecurity>> LoadSecurity(IEnumerable<Category> categories = null)
@@ -155,15 +156,17 @@ namespace Synapse.Crypto.Bybit
 
         }
 
+        #region candles
+
         /// <summary>
-        /// Загружает свечи для заданных инструмента, интервала, начальной и конечной даты
+        /// Loads candles for a given instrument, interval, start and end date.
         /// </summary>
-        /// <param name="category">тип инструмента</param>
-        /// <param name="symbol">инструмент</param>
-        /// <param name="interval">интервал</param>
-        /// <param name="startTime">начальное время</param>
-        /// <param name="endTime">конечное время</param>
-        /// <param name="limit">лимит загружаемых баров</param>
+        /// <param name="category">instrument type</param>
+        /// <param name="symbol">instrument symbol</param>
+        /// <param name="interval">interval</param>
+        /// <param name="startTime">start time</param>
+        /// <param name="endTime">end time</param>
+        /// <param name="limit">limit for loaded bars</param>
         /// <returns></returns>
         public async Task<Candle[]?> GetCandlesHistory(Category category, string symbol, MarketInterval interval, DateTime? startTime = null, DateTime? endTime = null, int? limit = 1000)
         {
@@ -224,12 +227,12 @@ namespace Synapse.Crypto.Bybit
         }
 
         /// <summary>
-        /// Загружает свечи с заданной начальной даты до текущего момента
+        /// Loads candles from the specified start date to the current moment.
         /// </summary>
-        /// <param name="category">тип инструмента</param>
-        /// <param name="symbol">тикер инструмента</param>
-        /// <param name="interval">интервал</param>
-        /// <param name="startTime">начальная дата</param>
+        /// <param name="category">instrument type</param>
+        /// <param name="symbol">instrument  symbol</param>
+        /// <param name="interval">interval</param>
+        /// <param name="startTime">start time</param>
         /// <returns></returns>
         public async Task<Candle[]> LoadCandlesHistory(Category category, string symbol, MarketInterval interval, DateTime startTime)
         {
@@ -268,6 +271,10 @@ namespace Synapse.Crypto.Bybit
 
         }
 
+        #endregion
+
+        #region fundingRate
+
         public async Task<List<FundingRate>> LoadFundingHistory(Category category, string symbol, DateTime startTime)
         {
             var rates = new List<FundingRate>();
@@ -292,7 +299,7 @@ namespace Synapse.Crypto.Bybit
             }
             catch (Exception ex)
             {
-                var msg = ex.Message;
+                Logger.ToError(ex);
             }
 
             return null;
@@ -330,30 +337,21 @@ namespace Synapse.Crypto.Bybit
 
         }
 
-        //var spotWebsocket = new BybitSpotWebSocket(true);
-        //        spotWebsocket.OnMessageReceived(
-        //            (data) =>
-        //    {
-        //        Console.WriteLine(data);
-
-        //        return Task.CompletedTask;
-        //    }, CancellationToken.None);
-
-        //await spotWebsocket.ConnectAsync(new string[] { "orderbook.50.BTCUSDT" }, CancellationToken.None);
+        #endregion
 
         #region web-sokets
 
         /// <summary>
-        /// Подписка на получение свечей через web-soket. При получении будет генерироваться событие CandleUpdate.  .
+        /// Subscribe to receive candles via a web socket. A CandleUpdate event will be generated when received.
         /// </summary>
-        /// <param name="symbols">список инструментов</param>
-        /// <param name="frame">интервал</param>
-        /// <param name="subscription">идентификатор подписки</param>
+        /// <param name="symbols">Instruments list</param>
+        /// <param name="frame">Interval</param>
+        /// <param name="subscription">Subscription identificator</param>
         /// <returns></returns>
         public async Task<string> SubscribeCandles(string[] symbols, TimeFrames frame, string? subscription = null)
         {
 
-            subscription ??= $"kline.{(int)frame}"; // если subscription == null
+            subscription ??= $"kline.{(int)frame}"; // if subscription == null
 
             if (Subscriptions.ContainsKey(subscription)) return subscription;
 
@@ -447,9 +445,9 @@ namespace Synapse.Crypto.Bybit
         }
 
         /// <summary>
-        /// Отменяет подписку на канал web-soket
+        /// Unsubscribes from a web socket channel.
         /// </summary>
-        /// <param name="subscription">идентификатор подписки</param>
+        /// <param name="subscription">Subscription identificator</param>
         /// <returns></returns>
         public async Task Unsubscribe(string subscription)
         {
@@ -482,16 +480,5 @@ namespace Synapse.Crypto.Bybit
         //BybitPositionService positionService = new(apiKey: "xxxxxxxxxxxxxx", apiSecret: "xxxxxxxxxxxxxxxxxxxxx", BybitConstants.HTTP_TESTNET_URL);
         //var positionInfo = await positionService.GetPositionInfo(category: Category.LINEAR, symbol: "BLZUSDT");
         //Console.WriteLine(positionInfo);
-
-
-
     }
 }
-
-
-//"{\"success\":true," +
-//    "\"ret_msg\":\"\"," +
-//    "\"conn_id\":\"d4anidhjocoercpjvr6g-28mw2\"," +
-//    "\"req_id\":\"bb1140bb-1654-4206-b722-aa9d6f01778d\"," +
-//    "\"op\":\"subscribe\"}" +
-//    "\0\0\0\0\0\0\0\0\0..."
