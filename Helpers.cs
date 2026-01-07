@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Synapse.Common;
+using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -13,7 +13,7 @@ namespace Synapse.Crypto.Bybit
         {
             return new Candle
             {
-                OpenTime = kline.start.ToDateTimeFromMs(),
+                OpenTime = kline.start.UnixTimeMillisecondsToDateTime(),
                 Open = kline.open,
                 High = kline.high,
                 Low = kline.low,

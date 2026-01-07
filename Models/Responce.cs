@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Synapse.Common;
+using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -64,9 +64,9 @@ namespace Synapse.Crypto.Bybit
     public class KlineData
     {
         public long start { get; set; }
-        public DateTime starttime { get => start.ToDateTimeFromMs(); }
+        public DateTime starttime { get => start.UnixTimeMillisecondsToDateTime(); }
         public long  end { get; set; }
-        public DateTime endtime { get => end.ToDateTimeFromMs(); }
+        public DateTime endtime { get => end.UnixTimeMillisecondsToDateTime(); }
         public int interval { get; set; }
         public double open { get; set; }
         public double close { get; set; }
@@ -76,7 +76,7 @@ namespace Synapse.Crypto.Bybit
         public double turnover { get; set; }
         public bool confirm { get; set; }
         public long timestamp { get; set; }
-        public DateTime tstime { get => timestamp.ToDateTimeFromMs(); }
+        public DateTime tstime { get => timestamp.UnixTimeMillisecondsToDateTime(); }
     }
 
     public class KlineResponse : SoketDataResponse

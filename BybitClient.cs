@@ -7,12 +7,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using NLog;
-using Synapse.Common;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
+using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -174,8 +174,8 @@ namespace Synapse.Crypto.Bybit
                     category: category,
                     symbol: symbol,
                     interval: interval,
-                    start: startTime?.ToLongUnix(),
-                    end: endTime?.ToLongUnix(),
+                    start: startTime?.ToUnixTimeSeconds(),
+                    end: endTime?.ToUnixTimeSeconds(),
                     limit: limit);
 
                 if (string.IsNullOrEmpty(response))
@@ -306,8 +306,8 @@ namespace Synapse.Crypto.Bybit
 
                 var fundResponse = await market.GetMarketFundingHistory(category: category,
                     symbol: symbol,
-                    startTime: startTime.ToLongUnix(),
-                    endTime: endTime?.ToLongUnix());
+                    startTime: startTime.ToUnixTimeSeconds(),
+                    endTime: endTime?.ToUnixTimeSeconds());
 
                 FundingRate[]? temp = null;
                 var tempResult = JsonConvert.DeserializeObject<BybitResponse>(fundResponse);

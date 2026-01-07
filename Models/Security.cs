@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Synapse.Common;
+using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -114,10 +114,7 @@ namespace Synapse.Crypto.Bybit
         [JsonProperty("launchTime")]
         public long LaunchTime { get; set; }
 
-        public DateTime StartTime 
-        { 
-            get => LaunchTime.ToDateTimeFromMs();
-        }
+        public DateTime StartTime { get => LaunchTime.UnixTimeMillisecondsToDateTime(); }
 
         [JsonProperty("deliveryTime")]
         public long DeliveryTime { get; set; }

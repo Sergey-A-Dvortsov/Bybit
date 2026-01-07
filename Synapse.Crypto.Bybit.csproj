@@ -20,7 +20,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Libs\bybit.net.api-main\Src\Common\bybit.net.api.csproj" />
-    <ProjectReference Include="..\Synapse.Common\Synapse.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Synapse.General">
+      <HintPath>..\..\Synapse\Synapse.General\bin\Debug\net8.0\Synapse.General.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
