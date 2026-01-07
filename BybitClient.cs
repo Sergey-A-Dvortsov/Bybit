@@ -85,9 +85,13 @@ namespace Synapse.Crypto.Bybit
                 var response = await market.GetInstrumentInfo(category: Category.SPOT, symbol: null, status: InstrumentStatus.Trading, null, 1000) ?? throw new NullReferenceException("Failed to take spotResponse");
                 var tempResult = JsonConvert.DeserializeObject<BybitResponse>(response);
 
+                if (tempResult == null) throw new NullReferenceException(nameof(tempResult));
+
                 if (tempResult?.RetMsg == "OK")
                 {
                     var spots = JsonConvert.DeserializeObject<BybitSecurity[]>(tempResult.Result.List.ToString());
+
+                    if (spots == null) throw new NullReferenceException(nameof(spots));
 
                     foreach (var item in spots)
                         item.ContractType = ContractType.Spot;
@@ -101,14 +105,16 @@ namespace Synapse.Crypto.Bybit
                 if (categories == null || categories.Any(c => c == Category.LINEAR))
                 {
                     response = await market.GetInstrumentInfo(category: Category.LINEAR, symbol: null, status: InstrumentStatus.Trading, null, 1000);
-                    if (response == null)
-                        throw new NullReferenceException("Failed to take linFutResponse");
+
+                    if (response == null) throw new NullReferenceException("Failed to take linFutResponse");
 
                     tempResult = JsonConvert.DeserializeObject<BybitResponse>(response);
 
                     if (tempResult?.RetMsg == "OK")
                     {
                         var linFuts = JsonConvert.DeserializeObject<BybitSecurity[]>(tempResult.Result.List.ToString());
+
+                        if (linFuts == null) throw new NullReferenceException(nameof(linFuts));
 
                         foreach (var item in linFuts)
                         {
@@ -127,14 +133,17 @@ namespace Synapse.Crypto.Bybit
                 {
                     response = await market.GetInstrumentInfo(category: Category.INVERSE, symbol: null, status: InstrumentStatus.Trading, null, 1000);
 
-                    if (response == null)
-                        throw new NullReferenceException("Failed to take invFutResponse");
+                    if (response == null) throw new NullReferenceException("Failed to take invFutResponse");
 
                     tempResult = JsonConvert.DeserializeObject<BybitResponse>(response);
+
+                    if (tempResult == null) throw new NullReferenceException(nameof(tempResult));
 
                     if (tempResult?.RetMsg == "OK")
                     {
                         var invFuts = JsonConvert.DeserializeObject<BybitSecurity[]>(tempResult.Result.List.ToString());
+
+                        if (invFuts == null) throw new NullReferenceException(nameof(invFuts));
 
                         foreach (var item in invFuts)
                         {
