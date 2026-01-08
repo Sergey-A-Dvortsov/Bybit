@@ -13,6 +13,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
 using Synapse.General;
+using Synapse.Crypto.Trading;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -22,7 +23,7 @@ namespace Synapse.Crypto.Bybit
     /// </summary>
     public class BybitClient
     {
-        private readonly BybitMarketDataService market = null;
+        private readonly BybitMarketDataService market;
 
         private readonly Dictionary<string, DateTime> candleTimes = [];
 
@@ -50,6 +51,8 @@ namespace Synapse.Crypto.Bybit
 
         #endregion
 
+        #region properties
+
         /// <summary>
         /// Logger
         /// </summary>
@@ -65,9 +68,11 @@ namespace Synapse.Crypto.Bybit
         /// </summary>
         public Dictionary<string, Tuple<BybitLinearWebSocket, CancellationToken>> Subscriptions { get; private set; } = [];
 
-        public static void Init()
+        #endregion
+
+        public void Init()
         {
-            Instance = new BybitClient();
+           // Instance = new BybitClient();
         }
 
         /// <summary>
@@ -200,6 +205,9 @@ namespace Synapse.Crypto.Bybit
                 if (result?.RetMsg == "OK")
                 {
                     var items = JsonConvert.DeserializeObject<object[]>(result.Result.List.ToString());
+
+                    if (items == null) throw new NullReferenceException(nameof(items)); 
+
                     candles = new Candle[items.Length];
 
                     for (var i = 0; i < items.Length; i++)
@@ -284,6 +292,13 @@ namespace Synapse.Crypto.Bybit
 
         #region fundingRate
 
+        /// <summary>
+        ///  Loads funding rates from the specified start date to the current moment.
+        /// </summary>
+        /// <param name="category">instrument type</param>
+        /// <param name="symbol">instrument symbol</param>
+        /// <param name="startTime">start time</param>
+        /// <returns></returns>
         public async Task<List<FundingRate>> LoadFundingHistory(Category category, string symbol, DateTime startTime)
         {
             var rates = new List<FundingRate>();
@@ -315,6 +330,15 @@ namespace Synapse.Crypto.Bybit
 
         }
 
+        /// <summary>
+        /// Loads funding rates for a given instrument, start and end date.
+        /// </summary>
+        /// <param name="category">instrument type</param>
+        /// <param name="symbol">instrument symbol</param>
+        /// <param name="startTime">start time</param>
+        /// <param name="endTime">end time</param>
+        /// <returns></returns>
+        /// <exception cref="NullReferenceException"></exception>
         public async Task<List<FundingRate>> GetFundingHistory(Category category, string symbol, DateTime startTime, DateTime? endTime = null)
         {
             try
@@ -325,12 +349,18 @@ namespace Synapse.Crypto.Bybit
                     startTime: startTime.ToUnixTimeSeconds(),
                     endTime: endTime?.ToUnixTimeSeconds());
 
-                FundingRate[]? temp = null;
+                if (fundResponse == null) throw new NullReferenceException(nameof(fundResponse));
+
                 var tempResult = JsonConvert.DeserializeObject<BybitResponse>(fundResponse);
+
+                if (tempResult == null) throw new NullReferenceException(nameof(tempResult));
+
+                FundingRate[]? temp = null;
+
                 if (tempResult.RetMsg == "OK")
-                {
                     temp = JsonConvert.DeserializeObject<FundingRate[]>(tempResult.Result.List.ToString());
-                }
+
+                if (temp == null) throw new NullReferenceException(nameof(temp));
 
                 var fundings = temp.Select(t => new FundingRate { Timestamp = t.Timestamp, Symbol = t.Symbol, Rate = t.Rate * 100 });
 
@@ -339,7 +369,7 @@ namespace Synapse.Crypto.Bybit
             }
             catch (Exception ex)
             {
-                var msg = ex.Message;
+                Logger.ToError(ex);
             }
 
             return null;
@@ -387,9 +417,12 @@ namespace Synapse.Crypto.Bybit
                         if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
                         {
                             var resp = JsonConvert.DeserializeObject<KlineResponse>(data);
+
+                            if (resp == null) throw new NullReferenceException(nameof(resp));
+
                             var symbol = resp.topic.Split('.')[2];
 
-                            // уменьшаем частоту событий
+                            // reduce the frequency of events
                             if (!resp.data.Last().confirm && (resp.data.Last().tstime - candleTimes[symbol]) < candleBrake)
                                 return Task.CompletedTask;
 
@@ -409,6 +442,8 @@ namespace Synapse.Crypto.Bybit
                         else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
                         {
                             var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
+
+                            if (resp == null) throw new NullReferenceException(nameof(resp));
 
                             if (resp.success)
                             {
@@ -467,8 +502,6 @@ namespace Synapse.Crypto.Bybit
             }
         }
 
-        #endregion
-
         //var privateWebsocket = new BybitPrivateWebsocket(apiKey: "xxxxxxxxx", apiSecret: "xxxxxxxxxx", useTestNet: true, debugMode: true);
         //privateWebsocket.OnMessageReceived(
         //    (data) =>
@@ -489,5 +522,8 @@ namespace Synapse.Crypto.Bybit
         //BybitPositionService positionService = new(apiKey: "xxxxxxxxxxxxxx", apiSecret: "xxxxxxxxxxxxxxxxxxxxx", BybitConstants.HTTP_TESTNET_URL);
         //var positionInfo = await positionService.GetPositionInfo(category: Category.LINEAR, symbol: "BLZUSDT");
         //Console.WriteLine(positionInfo);
+
+        #endregion
+
     }
 }
