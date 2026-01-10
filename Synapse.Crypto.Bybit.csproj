@@ -16,19 +16,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="NLog" Version="6.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NLog" Version="6.0.7" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Libs\bybit.net.api-main\Src\Common\bybit.net.api.csproj" />
+    <ProjectReference Include="..\..\Synapse\Synapse.General\Synapse.General.csproj" />
     <ProjectReference Include="..\Synapse.Crypto.Trading\Synapse.Crypto.Trading.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="Synapse.General">
-      <HintPath>..\..\Synapse\Synapse.General\bin\Debug\net8.0\Synapse.General.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>

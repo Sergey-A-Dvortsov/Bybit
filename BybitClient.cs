@@ -191,8 +191,8 @@ namespace Synapse.Crypto.Bybit
                     category: category,
                     symbol: symbol,
                     interval: interval,
-                    start: startTime?.ToUnixTimeSeconds(),
-                    end: endTime?.ToUnixTimeSeconds(),
+                    start: startTime?.ToUnixTimeMilliseconds(),
+                    end: endTime?.ToUnixTimeMilliseconds(),
                     limit: limit);
 
                 if (string.IsNullOrEmpty(response))
