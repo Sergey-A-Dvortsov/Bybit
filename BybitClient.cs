@@ -81,7 +81,7 @@ namespace Synapse.Crypto.Bybit
         /// <param name="categories">instrument type or null for all instruments</param>
         /// <returns></returns>
         /// <exception cref="NullReferenceException"></exception>
-        public async Task<List<BybitSecurity>> LoadSecurity(IEnumerable<Category> categories = null)
+        public async Task<List<BybitSecurity>> LoadSecuritiesAsync(IEnumerable<Category> categories = null)
         {
             try
             {
