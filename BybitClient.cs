@@ -7,13 +7,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using NLog;
+using Synapse.Crypto.Trading;
+using Synapse.General;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
-using Synapse.General;
-using Synapse.Crypto.Trading;
+using System.Xml.Linq;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -72,7 +73,7 @@ namespace Synapse.Crypto.Bybit
 
         public void Init()
         {
-           // Instance = new BybitClient();
+            // Instance = new BybitClient();
         }
 
         /// <summary>
@@ -206,7 +207,7 @@ namespace Synapse.Crypto.Bybit
                 {
                     var items = JsonConvert.DeserializeObject<object[]>(result.Result.List.ToString());
 
-                    if (items == null) throw new NullReferenceException(nameof(items)); 
+                    if (items == null) throw new NullReferenceException(nameof(items));
 
                     candles = new Candle[items.Length];
 
@@ -489,6 +490,113 @@ namespace Synapse.Crypto.Bybit
         }
 
         /// <summary>
+        /// Subscribe to receive orderbook via a web socket. A OrderBookUpdate event will be generated when received.
+        /// </summary>
+        /// <param name="symbols">Instruments list</param>
+        /// <param name="depth">depth of OrderBook</param>
+        /// <param name="subscription">Subscription identificator</param>
+        /// <returns></returns>
+        public async Task<string> SubscribeOrderBook(string[] symbols, int depth, string? subscription = null)
+        {
+
+            subscription ??= $"orderbook.{depth}"; // if subscription == null
+
+            if (Subscriptions.ContainsKey(subscription)) return subscription;
+
+            var args = new List<string>();
+
+            foreach (var symbol in symbols)
+            {
+                args.Add($"orderbook.{(int)depth}.{symbol}");
+            }
+
+            //var socket = new BybitLinearWebSocket();
+
+            var socket = new BybitSpotWebSocket();
+
+            CancellationTokenSource source = new();
+            CancellationToken token = source.Token;
+
+
+            socket.OnMessageReceived(
+             (data) =>
+            {
+                try
+                {
+
+                    if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
+                    {
+                        var resp = JsonConvert.DeserializeObject<KlineResponse>(data);
+
+                        if (resp == null) throw new NullReferenceException(nameof(resp));
+
+                        var symbol = resp.topic.Split('.')[2];
+
+                    }
+                    else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
+                    {
+                        var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
+
+                        if (resp == null) throw new NullReferenceException(nameof(resp));
+
+                        if (resp.success)
+                        {
+                            switch (resp.op)
+                            {
+                                case "subscribe":
+                                    {
+                                        break;
+                                    }
+                                case "ping":
+                                    {
+                                        break;
+                                    }
+                                default:
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception(data);
+                        }
+
+                    }
+                    else
+                    {
+                        throw new Exception(data);
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    Logger.ToError(ex);
+                }
+
+                return Task.CompletedTask;
+            }, token);
+
+
+            return subscription;
+
+            //orderbookorderbook.50.BTCUSDT
+
+        }
+
+
+
+        //    var spotWebsocket = new BybitSpotWebSocket(true);
+        //    spotWebsocket.OnMessageReceived(
+        //        (data) =>
+        //{
+        //    Console.WriteLine(data);
+
+        //    return Task.CompletedTask;
+        //}, CancellationToken.None);
+
+        //    await spotWebsocket.ConnectAsync(new string[] { "orderbook.50.BTCUSDT" }, CancellationToken.None);
+
+
+        /// <summary>
         /// Unsubscribes from a web socket channel.
         /// </summary>
         /// <param name="subscription">Subscription identificator</param>
@@ -501,6 +609,8 @@ namespace Synapse.Crypto.Bybit
                 Subscriptions.Remove(subscription);
             }
         }
+
+
 
         //var privateWebsocket = new BybitPrivateWebsocket(apiKey: "xxxxxxxxx", apiSecret: "xxxxxxxxxx", useTestNet: true, debugMode: true);
         //privateWebsocket.OnMessageReceived(
