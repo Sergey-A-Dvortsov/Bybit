@@ -2,6 +2,7 @@
 using bybit.net.api.ApiServiceImp;
 using bybit.net.api.Models;
 using bybit.net.api.Models.Market;
+using bybit.net.api.Websockets;
 using bybit.net.api.WebSocketStream;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,12 @@ using System.Xml.Linq;
 
 namespace Synapse.Crypto.Bybit
 {
+    public class Subscription
+    {
+        public BybitWebSocket Socket { get; set; }
+        public CancellationToken Token { get; set; }
+    }
+
     // Copyright(c) [2026], [Sergey Dvortsov]
     /// <summary>
     /// API client bybit
@@ -67,7 +74,7 @@ namespace Synapse.Crypto.Bybit
         /// <summary>
         /// Subscriptions to streaming data
         /// </summary>
-        public Dictionary<string, Tuple<BybitLinearWebSocket, CancellationToken>> Subscriptions { get; private set; } = [];
+        public Dictionary<string, Subscription> Subscriptions { get; private set; } = [];
 
         #endregion
 
@@ -386,14 +393,14 @@ namespace Synapse.Crypto.Bybit
         /// </summary>
         /// <param name="symbols">Instruments list</param>
         /// <param name="frame">Interval</param>
-        /// <param name="subscription">Subscription identificator</param>
+        /// <param name="subscriptId">Subscription identificator</param>
         /// <returns></returns>
-        public async Task<string> SubscribeCandles(string[] symbols, TimeFrames frame, string? subscription = null)
+        public async Task<string> SubscribeCandles(string[] symbols, TimeFrames frame, string? subscriptId = null)
         {
 
-            subscription ??= $"kline.{(int)frame}"; // if subscription == null
+            subscriptId ??= $"kline.{(int)frame}"; // if subscription == null
 
-            if (Subscriptions.ContainsKey(subscription)) return subscription;
+            if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
 
             candleTimes.Clear();
 
@@ -484,9 +491,11 @@ namespace Synapse.Crypto.Bybit
 
             await socket.ConnectAsync([.. args], token);
 
-            Subscriptions.Add(subscription, Tuple.Create(socket, token));
+            var subscription = new Subscription() { Socket = socket, Token = token };
 
-            return subscription;
+            Subscriptions.Add(subscriptId, subscription);
+
+            return subscriptId;
         }
 
         /// <summary>
@@ -494,14 +503,14 @@ namespace Synapse.Crypto.Bybit
         /// </summary>
         /// <param name="symbols">Instruments list</param>
         /// <param name="depth">depth of OrderBook</param>
-        /// <param name="subscription">Subscription identificator</param>
+        /// <param name="subscriptId">Subscription identificator</param>
         /// <returns></returns>
-        public async Task<string> SubscribeOrderBook(string[] symbols, int depth, string? subscription = null)
+        public async Task<string> SubscribeOrderBook(string[] symbols, int depth, string? subscriptId = null)
         {
 
-            subscription ??= $"orderbook.{depth}"; // if subscription == null
+            subscriptId ??= $"orderbook.{depth}"; // if subscription == null
 
-            if (Subscriptions.ContainsKey(subscription)) return subscription;
+            if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
 
             var args = new List<string>();
 
@@ -517,7 +526,6 @@ namespace Synapse.Crypto.Bybit
             CancellationTokenSource source = new();
             CancellationToken token = source.Token;
 
-
             socket.OnMessageReceived(
              (data) =>
             {
@@ -526,11 +534,11 @@ namespace Synapse.Crypto.Bybit
 
                     if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
                     {
-                        var resp = JsonConvert.DeserializeObject<KlineResponse>(data);
+                        var resp = JsonConvert.DeserializeObject<OrderbookResponse>(data);
 
                         if (resp == null) throw new NullReferenceException(nameof(resp));
 
-                        var symbol = resp.topic.Split('.')[2];
+                        var symbol = resp.data.s;
 
                     }
                     else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
@@ -557,7 +565,7 @@ namespace Synapse.Crypto.Bybit
                         }
                         else
                         {
-                            throw new Exception(data);
+                            throw new Exception(resp.ret_msg);
                         }
 
                     }
@@ -576,7 +584,13 @@ namespace Synapse.Crypto.Bybit
             }, token);
 
 
-            return subscription;
+            await socket.ConnectAsync([.. args], token);
+
+            var subscription = new Subscription() { Socket = socket, Token = token };
+
+            Subscriptions.Add(subscriptId, subscription);
+
+            return subscriptId;
 
             //orderbookorderbook.50.BTCUSDT
 
@@ -599,14 +613,14 @@ namespace Synapse.Crypto.Bybit
         /// <summary>
         /// Unsubscribes from a web socket channel.
         /// </summary>
-        /// <param name="subscription">Subscription identificator</param>
+        /// <param name="subscriptId">Subscription identificator</param>
         /// <returns></returns>
-        public async Task Unsubscribe(string subscription)
+        public async Task Unsubscribe(string subscriptId)
         {
-            if (Subscriptions.TryGetValue(subscription, out Tuple<BybitLinearWebSocket, CancellationToken>? value))
+            if (Subscriptions.TryGetValue(subscriptId, out Subscription? subscription))
             {
-                await value.Item1.DisconnectAsync(value.Item2);
-                Subscriptions.Remove(subscription);
+                await subscription.Socket.DisconnectAsync(subscription.Token);
+                Subscriptions.Remove(subscriptId);
             }
         }
 

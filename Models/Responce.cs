@@ -47,7 +47,7 @@ namespace Synapse.Crypto.Bybit
 
     public class SoketSubscribeResponse
     {
-        public bool success { set; get; } 
+        public bool success { set; get; }
         public string ret_msg { set; get; }
         public string conn_id { set; get; }
         public string req_id { set; get; }
@@ -59,13 +59,14 @@ namespace Synapse.Crypto.Bybit
         public string topic { get; set; }
         public long ts { get; set; }
         public string type { get; set; }
+        public long cts { get; set; }
     }
 
     public class KlineData
     {
         public long start { get; set; }
         public DateTime starttime { get => start.UnixTimeMillisecondsToDateTime(); }
-        public long  end { get; set; }
+        public long end { get; set; }
         public DateTime endtime { get => end.UnixTimeMillisecondsToDateTime(); }
         public int interval { get; set; }
         public double open { get; set; }
@@ -83,6 +84,24 @@ namespace Synapse.Crypto.Bybit
     {
         public KlineData[] data { get; set; }
     }
+
+    public class BookData
+    {
+        public string s {  get; set; }
+        public double[][] b { get; set; }
+        public double[][] a { get; set; }
+        public long u { get; set; }
+        public long seq { get; set; }
+    }
+
+    public class OrderbookResponse : SoketDataResponse
+    {
+        public BookData data { get; set; }
+    }
+
+}
+
+
 
 
     //    "topic": "kline.5.BTCUSDT",
@@ -104,4 +123,67 @@ namespace Synapse.Crypto.Bybit
     //"ts": 1672324988882,
     //"type": "snapshot"
 
-}
+
+
+
+//"topic": "orderbook.50.BTCUSDT",
+//    "type": "snapshot",
+//    "ts": 1672304484978,
+//    "data": {
+//        "s": "BTCUSDT",
+//        "b": [
+//            ...,
+//            [
+//                "16493.50",
+//                "0.006"
+//            ],
+//            [
+//                "16493.00",
+//                "0.100"
+//            ]
+//        ],
+//        "a": [
+//            [
+//                "16611.00",
+//                "0.029"
+//            ],
+//            [
+//                "16612.00",
+//                "0.213"
+//            ],
+//            ...,
+//        ],
+//    "u": 18521288,
+//    "seq": 7961638724
+//    },
+//    "cts": 1672304484976"topic": "orderbook.50.BTCUSDT",
+//    "type": "snapshot",
+//    "ts": 1672304484978,
+//    "data": {
+//        "s": "BTCUSDT",
+//        "b": [
+//            ...,
+//            [
+//                "16493.50",
+//                "0.006"
+//            ],
+//            [
+//                "16493.00",
+//                "0.100"
+//            ]
+//        ],
+//        "a": [
+//            [
+//                "16611.00",
+//                "0.029"
+//            ],
+//            [
+//                "16612.00",
+//                "0.213"
+//            ],
+//            ...,
+//        ],
+//    "u": 18521288,
+//    "seq": 7961638724
+//    },
+//    "cts": 1672304484976
