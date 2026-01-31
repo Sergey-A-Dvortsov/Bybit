@@ -57,6 +57,16 @@ namespace Synapse.Crypto.Bybit
             CandleUpdate?.Invoke(symbol, frame, candles);
         }
 
+        /// <summary>
+        /// Event of fastbook update
+        /// </summary>
+        public event Action<FastBook> FastBookUpdate = delegate { };
+
+        private void OnFastBookUpdate(FastBook book)
+        {
+            FastBookUpdate?.Invoke(book);
+        }
+
         #endregion
 
         #region properties
@@ -75,6 +85,8 @@ namespace Synapse.Crypto.Bybit
         /// Subscriptions to streaming data
         /// </summary>
         public Dictionary<string, Subscription> Subscriptions { get; private set; } = [];
+
+        public Dictionary<string, FastBook> FastBooks { get; private set; } = [];
 
         #endregion
 
@@ -517,6 +529,13 @@ namespace Synapse.Crypto.Bybit
             foreach (var symbol in symbols)
             {
                 args.Add($"orderbook.{(int)depth}.{symbol}");
+                if (!FastBooks.ContainsKey(symbol)) 
+                {
+                    var sec = Securities.FirstOrDefault(x => x.Symbol == symbol);
+                    if (sec == null) throw new NullReferenceException($"security: {symbol}");
+
+                    FastBooks.Add(symbol, new FastBook(symbol, sec.PriceFilter.TickSize));
+                }
             }
 
             //var socket = new BybitLinearWebSocket();
@@ -538,7 +557,10 @@ namespace Synapse.Crypto.Bybit
 
                         if (resp == null) throw new NullReferenceException(nameof(resp));
 
-                        var symbol = resp.data.s;
+                        if(FastBooks[resp.data.s].Update(resp))
+                        {
+                            OnFastBookUpdate(FastBooks[resp.data.s]);
+                        }
 
                     }
                     else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
