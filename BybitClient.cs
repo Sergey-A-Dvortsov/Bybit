@@ -86,7 +86,7 @@ namespace Synapse.Crypto.Bybit
         /// </summary>
         public Dictionary<string, Subscription> Subscriptions { get; private set; } = [];
 
-        public Dictionary<string, FastBook> FastBooks { get; private set; } = [];
+        public Dictionary<string, BybitFastBook> FastBooks { get; private set; } = [];
 
         #endregion
 
@@ -534,7 +534,7 @@ namespace Synapse.Crypto.Bybit
                     var sec = Securities.FirstOrDefault(x => x.Symbol == symbol);
                     if (sec == null) throw new NullReferenceException($"security: {symbol}");
 
-                    FastBooks.Add(symbol, new FastBook(symbol, sec.PriceFilter.TickSize));
+                    FastBooks.Add(symbol, new BybitFastBook(symbol, sec.PriceFilter.TickSize));
                 }
             }
 

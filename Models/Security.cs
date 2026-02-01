@@ -127,6 +127,11 @@ namespace Synapse.Crypto.Bybit
         [JsonProperty("priceScale")]
         public int PriceScale { get; set; }
 
+        public int PriceDecimals 
+        { 
+            get => PriceFilter.TickSize.GetDecimals();
+        }
+
         [JsonProperty("leverageFilter")]
         public LeverageFilter LeverageFilter { get; set; }
 
