@@ -605,7 +605,6 @@ namespace Synapse.Crypto.Bybit
                 return Task.CompletedTask;
             }, token);
 
-
             await socket.ConnectAsync([.. args], token);
 
             var subscription = new Subscription() { Socket = socket, Token = token };
