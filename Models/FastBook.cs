@@ -98,38 +98,54 @@ namespace Synapse.Crypto.Bybit
                 for (int i = 0; i < asks.Length; i++)
                 {
                     var idx = GetIndex(asks[i][0], BookSides.Ask);
+                    Asks[idx] = new Quote(asks[i][0], asks[i][1]);
 
                     if (asks[i][0] < BestAsk.Price) // если изменилась цена лучшего Ask в сторону умешьшения
                     {
-                        if (asks[i][0] == 0) throw new Exception("Неоднозначная ситуация. Пришло обновление лучшего Ask в сторону умешьшения с Size = 0. Возможно нарушена целостность книги заявок.");
-                        BestAskIndex = idx;
+                        if (asks[i][0] == 0)
+                        {
+                            var index = Asks.FindIndex<Quote>(0, q => q.Size > 0);
+                            if (index == null) throw new NullReferenceException(nameof(index));
+                            logger.Debug($"Неоднозначная ситуация. Пришло обновление лучшего Ask в сторону умешьшения с Size = 0. Новый индекс {index.Value}");
+                            BestAskIndex = index.Value;
+                        }
+                        else
+                        {
+                            BestAskIndex = idx;
+                        }
                     }
                     else if (asks[i][0] == BestAsk.Price) // если изменился размер лучшего Ask или цена в сторону увеличения 
                     {
                         if (asks[i][0] == 0) // изменилась цена лучшего Ask в сторону увеличения, ищем новый лучший аск 
                         {
                             var index = Asks.FindIndex<Quote>(idx + 1, q => q.Size > 0);
-
                             if (index == null)
                                 throw new NullReferenceException(nameof(index));
-
                             BestAskIndex = index.Value;
                         }
                     }
-
-                    Asks[idx] = new Quote(asks[i][0], asks[i][1]);
 
                 }
 
                 for (int i = 0; i < bids.Length; i++)
                 {
 
-                      var idx = GetIndex(bids[i][0], BookSides.Bid);
+                    var idx = GetIndex(bids[i][0], BookSides.Bid);
+                    Bids[idx] = new Quote(bids[i][0], bids[i][1]);
 
                     if (bids[i][0] > BestBid.Price) // если изменилась цена лучшего Bid в сторону увеличения
                     {
-                        if (bids[i][0] == 0) throw new Exception("Неоднозначная ситуация. Пришло обновление лучшего Bid в сторону увеличения с Size = 0. Возможно нарушена целостность книги заявок.");
-                          BestBidIndex = idx;
+                        if (bids[i][0] == 0)
+                        {
+                            var index = Bids.FindIndex<Quote>(0, q => q.Size > 0);
+                            if (index == null) throw new NullReferenceException(nameof(index));
+                            logger.Debug($"Неоднозначная ситуация. Пришло обновление лучшего Bid в сторону увеличения с Size = 0. Новый индекс {index.Value}");
+                            BestBidIndex = index.Value;
+                        }
+                        else
+                        {
+                            BestBidIndex = idx;
+                        }
                     }
                     else if (bids[i][0] == BestBid.Price) // если изменился размер лучшего Bid или цена в сторону уменьшения
                     {
@@ -144,8 +160,6 @@ namespace Synapse.Crypto.Bybit
                         }
                     }
 
-                    Bids[idx] = new Quote(bids[i][0], bids[i][1]);
-
                 }
 
                 return true;
@@ -158,20 +172,7 @@ namespace Synapse.Crypto.Bybit
             return false;
         }
 
-        ///// <summary>
-        /////  Возвращает индекс котировки
-        ///// </summary>
-        ///// <param name="price">цена</param>
-        ///// <param name="side">Bid/Ask</param>
-        ///// <returns></returns>
-        //private int GetIndex(double price, BookSides side)
-        //{
-        //    int index = side == BookSides.Ask ?
-        //        (int)Math.Round(((price - zeroAskPrice) / ticksize), 0) :
-        //        (int)Math.Round(((zeroBidPrice - price) / ticksize), 0);
-        //    return index;
-        //}
-
+        
     }
 }
 

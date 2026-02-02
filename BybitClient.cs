@@ -517,103 +517,122 @@ namespace Synapse.Crypto.Bybit
         /// <param name="depth">depth of OrderBook</param>
         /// <param name="subscriptId">Subscription identificator</param>
         /// <returns></returns>
-        public async Task<string> SubscribeOrderBook(string[] symbols, int depth, string? subscriptId = null)
+        public async Task<string> SubscribeOrderBookAsync(Category category, string[] symbols, int depth, string? subscriptId = null)
         {
 
-            subscriptId ??= $"orderbook.{depth}"; // if subscription == null
-
-            if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
-
-            var args = new List<string>();
-
-            foreach (var symbol in symbols)
+            try
             {
-                args.Add($"orderbook.{(int)depth}.{symbol}");
-                if (!FastBooks.ContainsKey(symbol)) 
+
+                subscriptId ??= $"orderbook.{depth}"; // if subscription == null
+
+                if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
+
+                var args = new List<string>();
+
+                foreach (var symbol in symbols)
                 {
-                    var sec = Securities.FirstOrDefault(x => x.Symbol == symbol);
-                    if (sec == null) throw new NullReferenceException($"security: {symbol}");
-
-                    FastBooks.Add(symbol, new BybitFastBook(symbol, sec.PriceFilter.TickSize));
-                }
-            }
-
-            //var socket = new BybitLinearWebSocket();
-
-            var socket = new BybitSpotWebSocket();
-
-            CancellationTokenSource source = new();
-            CancellationToken token = source.Token;
-
-            socket.OnMessageReceived(
-             (data) =>
-            {
-                try
-                {
-
-                    if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
+                    args.Add($"orderbook.{(int)depth}.{symbol}");
+                    if (!FastBooks.ContainsKey(symbol))
                     {
-                        var resp = JsonConvert.DeserializeObject<OrderbookResponse>(data);
+                        var sec = Securities.FirstOrDefault(x => x.Symbol == symbol);
+                        if (sec == null) throw new NullReferenceException($"security: {symbol}");
 
-                        if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                        if(FastBooks[resp.data.s].Update(resp))
-                        {
-                            OnFastBookUpdate(FastBooks[resp.data.s]);
-                        }
-
+                        FastBooks.Add(symbol, new BybitFastBook(symbol, sec.PriceFilter.TickSize));
                     }
-                    else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
+                }
+
+                BybitWebSocket? socket = null;
+
+                if (category == Category.SPOT)
+                    socket = new BybitSpotWebSocket();
+                else if (category == Category.LINEAR)
+                    socket = new BybitLinearWebSocket();
+                else if (category == Category.INVERSE)
+                    socket = new BybitInverseWebSocket();
+                else if (category == Category.OPTION)
+                    socket = new BybitOptionWebSocket();
+
+                if (socket == null) throw new NullReferenceException(nameof(socket));
+
+                CancellationTokenSource source = new();
+                CancellationToken token = source.Token;
+
+                socket.OnMessageReceived(
+                 (data) =>
+                {
+                    try
                     {
-                        var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
 
-                        if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                        if (resp.success)
+                        if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
                         {
-                            switch (resp.op)
+                            var resp = JsonConvert.DeserializeObject<OrderbookResponse>(data);
+
+                            if (resp == null) throw new NullReferenceException(nameof(resp));
+
+                            if (FastBooks[resp.data.s].Update(resp))
                             {
-                                case "subscribe":
-                                    {
-                                        break;
-                                    }
-                                case "ping":
-                                    {
-                                        break;
-                                    }
-                                default:
-                                    break;
+                                OnFastBookUpdate(FastBooks[resp.data.s]);
                             }
+
+                        }
+                        else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
+                        {
+                            var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
+
+                            if (resp == null) throw new NullReferenceException(nameof(resp));
+
+                            if (resp.success)
+                            {
+                                switch (resp.op)
+                                {
+                                    case "subscribe":
+                                        {
+                                            break;
+                                        }
+                                    case "ping":
+                                        {
+                                            break;
+                                        }
+                                    default:
+                                        break;
+                                }
+                            }
+                            else
+                            {
+                                throw new Exception(resp.ret_msg);
+                            }
+
                         }
                         else
                         {
-                            throw new Exception(resp.ret_msg);
+                            throw new Exception(data);
                         }
 
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        throw new Exception(data);
+                        Logger.ToError(ex);
                     }
 
-                }
-                catch (Exception ex)
-                {
-                    Logger.ToError(ex);
-                }
+                    return Task.CompletedTask;
+                }, token);
 
-                return Task.CompletedTask;
-            }, token);
+                await socket.ConnectAsync([.. args], token);
 
-            await socket.ConnectAsync([.. args], token);
+                var subscription = new Subscription() { Socket = socket, Token = token };
 
-            var subscription = new Subscription() { Socket = socket, Token = token };
+                Subscriptions.Add(subscriptId, subscription);
 
-            Subscriptions.Add(subscriptId, subscription);
+                return subscriptId;
 
-            return subscriptId;
+            }
+            catch (Exception ex)
+            {
 
-            //orderbookorderbook.50.BTCUSDT
+                Logger.ToError(ex);
+            }
+
+            return "";
 
         }
 
