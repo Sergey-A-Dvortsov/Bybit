@@ -22,7 +22,7 @@ namespace Synapse.Crypto.Bybit
         private long updatets; //The timestamp from the matching engine when this orderbook data is produced.
                                //It can be correlated with T from public trade channel
 
-        public BybitFastBook(string symbol, double ticksize) : base(symbol, ticksize)
+        public BybitFastBook(InstrumentTypes type, string symbol, double ticksize) : base(type, symbol, ticksize)
         {
         }
 

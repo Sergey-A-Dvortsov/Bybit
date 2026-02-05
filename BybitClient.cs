@@ -542,7 +542,14 @@ namespace Synapse.Crypto.Bybit
                         var sec = Securities.FirstOrDefault(x => x.Symbol == symbol);
                         if (sec == null) throw new NullReferenceException($"security: {symbol}");
 
-                        FastBooks.Add(symbol, new BybitFastBook(symbol, sec.PriceFilter.TickSize));
+                        InstrumentTypes? type = category.GetInstrumentType();
+
+                        if (type == null) throw new NullReferenceException(nameof(type));
+
+                        if (type == InstrumentTypes.Linear && symbol.Contains("-"))
+                            type = InstrumentTypes.Calendar;
+
+                        FastBooks.Add(symbol, new BybitFastBook(type.Value, symbol, sec.PriceFilter.TickSize));
                     }
                 }
 

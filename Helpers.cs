@@ -1,10 +1,11 @@
-﻿using System;
+﻿using bybit.net.api.Models;
+using Synapse.Crypto.Trading;
+using Synapse.General;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Synapse.Crypto.Trading;
-using Synapse.General;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -31,5 +32,19 @@ namespace Synapse.Crypto.Bybit
                 Confirm = kline.confirm
             };
         }
+
+
+        public static InstrumentTypes? GetInstrumentType(this Category category)
+        {
+
+            if(category == Category.INVERSE)
+                return InstrumentTypes.Inverse;
+            else if(category == Category.LINEAR)
+                return InstrumentTypes.Linear;
+            else if (category == Category.SPOT)
+                return InstrumentTypes.Spot;
+            return null;
+        }
+
     }
 }
