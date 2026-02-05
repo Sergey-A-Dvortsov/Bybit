@@ -37,7 +37,12 @@ namespace Synapse.Crypto.Bybit
 
         private readonly TimeSpan candleBrake = TimeSpan.FromSeconds(5);
 
+        private BookUpdateTaskQueue bookQueue;
+
         public static BybitClient Instance { get; private set; }
+
+
+
 
         public BybitClient()
         {
@@ -569,6 +574,10 @@ namespace Synapse.Crypto.Bybit
 
                             if (resp == null) throw new NullReferenceException(nameof(resp));
 
+                            bookQueue ??= new();
+
+                            bookQueue.Enqueue(resp, ProcessUpdate);
+
                             if (FastBooks[resp.data.s].Update(resp))
                             {
                                 OnFastBookUpdate(FastBooks[resp.data.s]);
@@ -636,7 +645,13 @@ namespace Synapse.Crypto.Bybit
 
         }
 
+        async Task ProcessUpdate(OrderbookResponse update)
+        {
+            string symbol = update.data.s;
 
+            if (FastBooks[symbol].Update(update))
+                OnFastBookUpdate(FastBooks[symbol]);
+        }
 
         //    var spotWebsocket = new BybitSpotWebSocket(true);
         //    spotWebsocket.OnMessageReceived(
@@ -691,3 +706,4 @@ namespace Synapse.Crypto.Bybit
 
     }
 }
+
