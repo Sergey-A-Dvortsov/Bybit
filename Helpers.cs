@@ -46,5 +46,13 @@ namespace Synapse.Crypto.Bybit
             return null;
         }
 
+        public static string GetSpotSymbol(string symbol)
+        {
+            var quoteSmb = symbol.GetQuoteSymbol();
+            var baseSmb = symbol.Replace(quoteSmb, "");
+            return $"{baseSmb}/{quoteSmb}";
+        }
+
+
     }
 }

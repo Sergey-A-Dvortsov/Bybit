@@ -96,6 +96,7 @@ namespace Synapse.Crypto.Bybit
 
     public class OrderbookResponse : SoketDataResponse
     {
+        public ContractType ContractType { get; set; }
         public BookData data { get; set; }
     }
 
