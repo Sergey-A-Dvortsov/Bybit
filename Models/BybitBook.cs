@@ -1,21 +1,11 @@
-﻿using NLog;
-using Synapse.Crypto.Trading;
+﻿using Synapse.Crypto.Trading;
 using Synapse.General;
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Diagnostics;
-using System.Linq;
-using System.Numerics;
 using System.Text;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Synapse.Crypto.Bybit
 {
-
-    
-
     public class BybitFastBook : FastBook
     {
 
@@ -24,6 +14,23 @@ namespace Synapse.Crypto.Bybit
 
         public BybitFastBook(InstrumentTypes type, string symbol, double ticksize) : base(type, symbol, ticksize)
         {
+            //BTCUSDT-27FEB26
+            if (type == InstrumentTypes.LinearFutures || type == InstrumentTypes.InverseFutures)
+            {
+                if (symbol.Contains('-'))
+                {
+                    var temp = symbol.Split("-")[0];
+                    QuoteSymbol = temp.GetQuoteSymbol();
+                    BaseSymbol = temp.Replace(QuoteSymbol, "").Replace("/", "");
+                }
+            }
+            else
+            {
+                QuoteSymbol = symbol.GetQuoteSymbol();
+                BaseSymbol = symbol.Replace(QuoteSymbol, "").Replace("/", "");
+            }
+
+            
         }
 
         public override DateTime UpdateTime { get => updatets.UnixTimeMillisecondsToDateTime(); }
@@ -31,12 +38,12 @@ namespace Synapse.Crypto.Bybit
         public bool Update(OrderbookResponse resp)
         {
             updatets = resp.cts;
-            Delay = DateTime.UtcNow - UpdateTime; 
+            Delay = DateTime.UtcNow - UpdateTime;
 
             if (resp.type == "snapshot")
-                 return UpdateWithSnapshot(resp);
+                return UpdateWithSnapshot(resp);
             else if (resp.type == "delta")
-                 return UpdateWithDelta(resp);
+                return UpdateWithDelta(resp);
             return false;
         }
 
@@ -50,7 +57,7 @@ namespace Synapse.Crypto.Bybit
             var bids = ss.data.b;
 
             //TODO сделать проверку на валидность данных в asks/bids. Если данные не валидны, то генерируем ошибку, выставляем Valid = false
-            Valid = true;
+            Valid = false;
 
             Dictionary<BookSides, double[]> prices = new()
             {
@@ -76,6 +83,10 @@ namespace Synapse.Crypto.Bybit
                 Bids[idx] = new Quote(bids[i][0], bids[i][1]);
             }
 
+            logger.Debug($"UpdateWithSnapshot.{ss.data.s},Asks.Length={Asks.Length},BestAskIndex={BestAskIndex},Bids.Length={Bids.Length},BestBidIndex={BestBidIndex}");
+
+            Valid = true;
+
             return true;
 
         }
@@ -86,18 +97,35 @@ namespace Synapse.Crypto.Bybit
         /// <param name="ss">Orderbook delta</param>
         public bool UpdateWithDelta(OrderbookResponse delta)
         {
+            string smb = delta.data.s;
+
+            if (!SnapshotReceived)
+            {
+                logger.Debug($"{smb}/Снапшот не был получен");
+                return false;
+            }
+
             var asks = delta.data.a;
             var bids = delta.data.b;
 
+            string tag = "";
+
             try
             {
+
+
 
                 //TODO сделать проверку на валидность данных в asks/bids. Если данные не валидны, то генерируем ошибку, выставляем Valid = false
                 Valid = true;
 
                 for (int i = 0; i < asks.Length; i++)
                 {
+
+
                     var idx = GetIndex(asks[i][0], BookSides.Ask);
+
+                    tag = $"{smb},i={i},asks.Length={asks.Length},idx={idx},Asks.Length={Asks.Length}";
+
                     Asks[idx] = new Quote(asks[i][0], asks[i][1]);
 
                     if (asks[i][0] < BestAsk.Price) // если изменилась цена лучшего Ask в сторону умешьшения
@@ -124,6 +152,7 @@ namespace Synapse.Crypto.Bybit
                             BestAskIndex = index.Value;
                         }
                     }
+
 
                 }
 
@@ -155,7 +184,6 @@ namespace Synapse.Crypto.Bybit
 
                             if (index == null)
                                 throw new NullReferenceException(nameof(index));
-
                             BestBidIndex = index.Value;
                         }
                     }
@@ -166,35 +194,171 @@ namespace Synapse.Crypto.Bybit
             }
             catch (Exception ex)
             {
-                logger.ToError(ex);
+                logger.ToError(ex, tag);
             }
 
             return false;
         }
 
+
+    }
+
+
+    public class BybitBook : OrderBook
+    {
+        private long updatets; //The timestamp from the matching engine when this orderbook data is produced.
+                               //It can be correlated with T from public trade channel
+
+        private long updateNum;
+
+        public BybitBook(InstrumentTypes type, string symbol, double ticksize) : base(type, symbol, ticksize)
+        {
+            //BTCUSDT-27FEB26
+            if (type == InstrumentTypes.LinearFutures || type == InstrumentTypes.InverseFutures)
+            {
+                if (symbol.Contains('-'))
+                {
+                    var temp = symbol.Split("-")[0];
+                    QuoteSymbol = temp.GetQuoteSymbol();
+                    BaseSymbol = temp.Replace(QuoteSymbol, "").Replace("/", "");
+                }
+            }
+            else
+            {
+                QuoteSymbol = symbol.GetQuoteSymbol();
+                BaseSymbol = symbol.Replace(QuoteSymbol, "").Replace("/", "");
+            }
+          
+        }
+
+        public DateTime UpdateTime { get => updatets.UnixTimeMillisecondsToDateTime(); }
+
+        public bool Update(OrderbookResponse resp)
+        {
+            updatets = resp.cts;
+            Delay = DateTime.UtcNow - UpdateTime;
+
+            if (resp.type == "snapshot")
+                return UpdateWithSnapshot(resp);
+            else if (resp.type == "delta")
+                return UpdateWithDelta(resp);
+            return false;
+        }
+
         
+
+        /// <summary>
+        /// Полностью обновляет массивы Asks и Bids при помощи снапшота книги заявок.
+        /// </summary>
+        /// <param name="ss">Orderbook snapshot</param>
+        public bool UpdateWithSnapshot(OrderbookResponse ss)
+        {
+            var asks = ss.data.a;
+            var bids = ss.data.b;
+            updateNum = ss.data.u;
+
+            //TODO сделать проверку на валидность данных в asks/bids. Если данные не валидны, то генерируем ошибку, выставляем Valid = false
+            Valid = false;
+
+            Asks.Clear();
+
+            // Заполняем массивы Asks и Bids полученными котировками из снапшота
+            for (int i = 0; i < asks.Length; i++)
+            {
+                Asks.Add(Math.Round(asks[i][0],Decimals), asks[i][1]);
+            }
+
+            for (int i = 0; i < bids.Length; i++)
+            {
+                Bids.Add(Math.Round(bids[i][0], Decimals), bids[i][1]);
+            }
+
+            logger.Debug($"UpdateWithSnapshot.{ss.data.s},Asks.Count={Asks.Count}, Bids.Count={Bids.Count}");
+
+            Valid = true;
+
+            return true;
+
+        }
+
+
+        /// <summary>
+        /// Обновляет массивы Asks и Bids при помощи измененных котировок .
+        /// </summary>
+        /// <param name="ss">Orderbook delta</param>
+        public bool UpdateWithDelta(OrderbookResponse delta)
+        {
+            string smb = delta.data.s;
+
+            if (!Valid)
+            {
+                logger.Debug($"{smb}/Снапшот не был получен или была ошибка при его создании.");
+                return false;
+            }
+
+
+            var asks = delta.data.a;
+            var bids = delta.data.b;
+
+            string tag = "";
+
+            try
+            {
+
+                if (delta.data.u < updateNum)
+                    throw new ArgumentException("Номер обновления меньше предыдущего.");
+
+                updateNum = delta.data.u;
+
+                for (int i = 0; i < asks.Length; i++)
+                {
+
+                    //tag = $"{smb},i={i},asks.Length={asks.Length},idx={idx},Asks.Length={Asks.Length}";
+
+                    if(Asks.ContainsKey(asks[i][0]))
+                    {
+                        if(asks[i][1] != 0)
+                            Asks[asks[i][0]] = asks[i][1];
+                        else
+                            Asks.Remove(asks[i][0]);
+                    }
+                    else
+                    {
+                        if (asks[i][1] != 0)
+                            Asks.Add(Math.Round(asks[i][0], Decimals), asks[i][1]);
+                    }
+
+                }
+
+                for (int i = 0; i < bids.Length; i++)
+                {
+                    if (Bids.ContainsKey(bids[i][0]))
+                    {
+                        if (bids[i][1] != 0)
+                            Bids[bids[i][0]] = bids[i][1];
+                        else
+                            Bids.Remove(bids[i][0]);
+                    }
+                    else
+                    {
+                        if (bids[i][1] != 0)
+                            Bids.Add(Math.Round(bids[i][0], Decimals), bids[i][1]);
+                    }
+
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger.ToError(ex, tag);
+            }
+
+            return false;
+        }
+
+
+
+
     }
 }
-
-
-//public readonly record struct Point(double X, double Y);
-//// или просто
-//public readonly struct Point
-//{
-//    public double X;
-//    public double Y;
-
-//    // если хотите методы — добавляйте, но без виртуальных
-//}
-
-//Point[] points = new Point[1_000_000];
-
-//// горячий цикл
-//for (int i = 0; i < points.Length; i++)
-//{
-//    ref var p = ref points[i];          // ← очень важно: ref-доступ
-//    p.X += velocityX;
-//    p.Y += velocityY;
-//}
-
-//The timestamp from the matching engine when this orderbook data is produced. It can be correlated with T from public trade channel

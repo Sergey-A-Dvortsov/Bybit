@@ -43,9 +43,6 @@ namespace Synapse.Crypto.Bybit
 
         public static BybitClient Instance { get; private set; }
 
-
-
-
         public BybitClient()
         {
             market = new(url: BybitConstants.HTTP_MAINNET_URL, debugMode: false);
@@ -74,6 +71,16 @@ namespace Synapse.Crypto.Bybit
             FastBookUpdate?.Invoke(book);
         }
 
+        /// <summary>
+        /// Event of orderbook update
+        /// </summary>
+        public event Action<OrderBook> OrderBookUpdate = delegate { };
+
+        private void OnOrderBookUpdate(OrderBook book)
+        {
+            OrderBookUpdate?.Invoke(book);
+        }
+
         #endregion
 
         #region properties
@@ -94,6 +101,9 @@ namespace Synapse.Crypto.Bybit
         public Dictionary<string, Subscription> Subscriptions { get; private set; } = [];
 
         public Dictionary<string, BybitFastBook> FastBooks { get; private set; } = [];
+
+        public Dictionary<string, BybitBook> Books { get; private set; } = [];
+
 
         #endregion
 
@@ -148,6 +158,8 @@ namespace Synapse.Crypto.Bybit
                         var linFuts = JsonConvert.DeserializeObject<BybitSecurity[]>(tempResult.Result.List.ToString());
 
                         if (linFuts == null) throw new NullReferenceException(nameof(linFuts));
+
+                        var calFuts = linFuts.Where(f => f.ContractType == ContractType.LinearFutures).ToList();
 
                         foreach (var item in linFuts)
                         {
@@ -526,65 +538,45 @@ namespace Synapse.Crypto.Bybit
         /// <param name="depth">depth of OrderBook</param>
         /// <param name="subscriptId">Subscription identificator</param>
         /// <returns></returns>
-        public async Task<string> SubscribeOrderBookAsync(Category category, string[] symbols, int depth, string? subscriptId = null)
+        public async Task<string> SubscribeOrderBookAsync(InstrumentTypes type, string[] symbols, string? subscriptId = null, string booktype = "book", int depth = 50)
         {
 
             try
             {
 
-                subscriptId ??= $"orderbook.{depth}"; // if subscription == null
+                subscriptId ??= $"book.{type}.{depth}"; // if subscription == null
 
                 if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
 
                 var args = new List<string>();
 
-                foreach (var symbol in symbols)
+                foreach (var s in symbols)
                 {
-                    args.Add($"orderbook.{(int)depth}.{symbol}");
+                    var symbol = s.ToUpper();
 
-                    if (!FastBooks.ContainsKey(symbol))
+                    string smb = type == InstrumentTypes.Spot ? symbol.Replace("/", "") : symbol;
+
+                    args.Add($"orderbook.{(int)depth}.{smb}");
+
+                    if (booktype == "fast")
                     {
-                        InstrumentTypes? type = category.GetInstrumentType();
-                        if (type == InstrumentTypes.Linear && symbol.Contains("-"))
-                            type = InstrumentTypes.Calendar;
-
-                        string contract = "";
-
-                        if (category == Category.SPOT)
+                        if (!FastBooks.ContainsKey(symbol))
                         {
-                            contract = ContractType.Spot;
+                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString());
+                            if (sec == null) throw new NullReferenceException($"security: {symbol}");
+                            FastBooks.Add(symbol, new BybitFastBook(type, symbol, sec.PriceFilter.TickSize));
                         }
-                        else if (category == Category.LINEAR)
-                        {
-                            if (type == InstrumentTypes.Calendar)
-                                contract = ContractType.LinearFutures;
-                            else
-                                contract = ContractType.LinearPerpetual;
-                        }
-                        else if (category == Category.INVERSE)
-                        {
-                            if (type == InstrumentTypes.Calendar)
-                                contract = ContractType.InverseFutures;
-                            else
-                                contract = ContractType.InversePerpetual;
-                        }
-
-                        var sec = Securities.FirstOrDefault(x => x.Symbol == symbol && x.ContractType == contract);
-
-                        if (sec == null) throw new NullReferenceException($"security: {symbol}");
-
-                        if (type == null) throw new NullReferenceException(nameof(type));
-
-                        string smb = symbol;
-
-                        if (category == Category.SPOT)
-                        {
-                            smb = Helpers.GetSpotSymbol(symbol);
-                        }
-
-                        FastBooks.Add(smb, new BybitFastBook(type.Value, symbol, sec.PriceFilter.TickSize));
-
                     }
+                    if (booktype == "book")
+                    {
+                        if (!Books.ContainsKey(symbol))
+                        {
+                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString());
+                            if (sec == null) throw new NullReferenceException($"security: {symbol}");
+                            Books.Add(symbol, new BybitBook(type, symbol, sec.PriceFilter.TickSize));
+                        }
+                    }
+
                 }
 
                 BybitWebSocket? socket = null;
@@ -592,25 +584,25 @@ namespace Synapse.Crypto.Bybit
                 CancellationTokenSource source = new();
                 CancellationToken token = source.Token;
 
-                if (category == Category.SPOT)
+                if (type == InstrumentTypes.Spot)
                 {
                     socket = new BybitSpotWebSocket();
-                    socket.OnMessageReceived(async d => await OnSpotBookMessage(d), token);
+                    socket.OnMessageReceived(async d => await OnSpotBookMessage(d, booktype), token);
                 }
-                else if (category == Category.LINEAR)
+                else if (type == InstrumentTypes.LinearPerpetual || type == InstrumentTypes.LinearFutures)
                 {
                     socket = new BybitLinearWebSocket();
-                    socket.OnMessageReceived(async d => await OnLinearBookMessage(d), token);
+                    socket.OnMessageReceived(async d => await OnLinearBookMessage(d, booktype), token);
                 }
-                else if (category == Category.INVERSE)
+                else if (type == InstrumentTypes.InversePerpetual || type == InstrumentTypes.InverseFutures)
                 {
                     socket = new BybitInverseWebSocket();
-                    socket.OnMessageReceived(async d => await OnInverseBookMessage(d), token);
+                    socket.OnMessageReceived(async d => await OnInverseBookMessage(d, booktype), token);
                 }
-                else if (category == Category.OPTION)
-                    socket = new BybitOptionWebSocket();
+                else
+                    //socket = new BybitOptionWebSocket();
 
-                if (socket == null) throw new NullReferenceException(nameof(socket));
+                    if (socket == null) throw new NullReferenceException(nameof(socket));
 
                 await socket.ConnectAsync([.. args], token);
 
@@ -623,12 +615,10 @@ namespace Synapse.Crypto.Bybit
             }
             catch (Exception ex)
             {
-
                 Logger.ToError(ex);
             }
 
             return "";
-
         }
 
         private async Task OnMessage(string d)
@@ -641,10 +631,20 @@ namespace Synapse.Crypto.Bybit
             string symbol = update.data.s;
 
             if (update.ContractType == ContractType.Spot)
-                symbol = Helpers.GetSpotSymbol(symbol); 
+                symbol = Helpers.GetSpotSymbol(symbol);
 
-            if (FastBooks[symbol].Update(update))
-                OnFastBookUpdate(FastBooks[symbol]);
+
+            if(update.BookType == "fast")
+            {
+                if (FastBooks[symbol].Update(update))
+                    OnFastBookUpdate(FastBooks[symbol]);
+            }
+            else if (update.BookType == "book")
+            {
+                if (Books[symbol].Update(update))
+                    OnOrderBookUpdate(Books[symbol]);
+            }
+
         }
 
         //    var spotWebsocket = new BybitSpotWebSocket(true);
@@ -653,17 +653,17 @@ namespace Synapse.Crypto.Bybit
         //{
         //    Console.WriteLine(data);
 
-        //    return Task.CompletedTask;
-        //}, CancellationToken.None);
+            //    return Task.CompletedTask;
+            //}, CancellationToken.None);
 
-        //    await spotWebsocket.ConnectAsync(new string[] { "orderbook.50.BTCUSDT" }, CancellationToken.None);
+            //    await spotWebsocket.ConnectAsync(new string[] { "orderbook.50.BTCUSDT" }, CancellationToken.None);
 
 
-        /// <summary>
-        /// Unsubscribes from a web socket channel.
-        /// </summary>
-        /// <param name="subscriptId">Subscription identificator</param>
-        /// <returns></returns>
+            /// <summary>
+            /// Unsubscribes from a web socket channel.
+            /// </summary>
+            /// <param name="subscriptId">Subscription identificator</param>
+            /// <returns></returns>
         public async Task Unsubscribe(string subscriptId)
         {
             if (Subscriptions.TryGetValue(subscriptId, out Subscription? subscription))
@@ -685,7 +685,7 @@ namespace Synapse.Crypto.Bybit
             Subscriptions.Clear();
         }
 
-        private Task OnSpotBookMessage(string data)
+        private Task OnSpotBookMessage(string data, string booktype)
         {
             try
             {
@@ -698,14 +698,10 @@ namespace Synapse.Crypto.Bybit
 
                     bookQueue ??= new();
 
+                    resp.BookType = booktype;
                     resp.ContractType = ContractType.Spot;
 
                     bookQueue.Enqueue(resp, ProcessUpdate);
-
-                    //if (FastBooks[resp.data.s].Update(resp))
-                    //{
-                    //    OnFastBookUpdate(FastBooks[resp.data.s]);
-                    //}
 
                 }
                 else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
@@ -751,7 +747,7 @@ namespace Synapse.Crypto.Bybit
             return Task.CompletedTask;
         }
 
-        private Task OnLinearBookMessage(string data)
+        private Task OnLinearBookMessage(string data, string booktype)
         {
             try
             {
@@ -762,8 +758,9 @@ namespace Synapse.Crypto.Bybit
 
                     if (resp == null) throw new NullReferenceException(nameof(resp));
 
+                    resp.BookType = booktype;
                     resp.ContractType = ContractType.LinearPerpetual;
-                    if(resp.data.s.Contains("-"))
+                    if (resp.data.s.Contains("-"))
                         resp.ContractType = ContractType.LinearFutures;
 
                     bookQueue ??= new();
@@ -812,7 +809,7 @@ namespace Synapse.Crypto.Bybit
             return Task.CompletedTask;
         }
 
-        private Task OnInverseBookMessage(string data)
+        private Task OnInverseBookMessage(string data, string booktype)
         {
             try
             {
@@ -825,7 +822,9 @@ namespace Synapse.Crypto.Bybit
 
                     bookQueue ??= new();
 
+                    resp.BookType = booktype;
                     resp.ContractType = ContractType.InversePerpetual;
+
                     if (resp.data.s.Contains("-"))
                         resp.ContractType = ContractType.InverseFutures;
 

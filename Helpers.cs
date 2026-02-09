@@ -34,17 +34,17 @@ namespace Synapse.Crypto.Bybit
         }
 
 
-        public static InstrumentTypes? GetInstrumentType(this Category category)
-        {
+        //public static InstrumentTypes? GetInstrumentType(this Category category)
+        //{
 
-            if(category == Category.INVERSE)
-                return InstrumentTypes.Inverse;
-            else if(category == Category.LINEAR)
-                return InstrumentTypes.Linear;
-            else if (category == Category.SPOT)
-                return InstrumentTypes.Spot;
-            return null;
-        }
+        //    if(category == Category.INVERSE)
+        //        return InstrumentTypes.Inverse;
+        //    else if(category == Category.LINEAR)
+        //        return InstrumentTypes.Linear;
+        //    else if (category == Category.SPOT)
+        //        return InstrumentTypes.Spot;
+        //    return null;
+        //}
 
         public static string GetSpotSymbol(string symbol)
         {
