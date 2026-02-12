@@ -211,7 +211,7 @@ namespace Synapse.Crypto.Bybit
 
         private long updateNum;
 
-        public BybitBook(InstrumentTypes type, string symbol, double ticksize) : base(type, symbol, ticksize)
+        public BybitBook(InstrumentTypes type, string symbol, double ticksize, int decimals) : base(type, symbol, ticksize, decimals)
         {
             //BTCUSDT-27FEB26
             if (type == InstrumentTypes.LinearFutures || type == InstrumentTypes.InverseFutures)
@@ -251,7 +251,7 @@ namespace Synapse.Crypto.Bybit
         /// Полностью обновляет массивы Asks и Bids при помощи снапшота книги заявок.
         /// </summary>
         /// <param name="ss">Orderbook snapshot</param>
-        public bool UpdateWithSnapshot(OrderbookResponse ss)
+        private bool UpdateWithSnapshot(OrderbookResponse ss)
         {
             var asks = ss.data.a;
             var bids = ss.data.b;
@@ -275,6 +275,10 @@ namespace Synapse.Crypto.Bybit
 
             logger.Debug($"UpdateWithSnapshot.{ss.data.s},Asks.Count={Asks.Count}, Bids.Count={Bids.Count}");
 
+            SnapshotReceived = true;
+
+            SnapshotTime = DateTime.UtcNow;
+
             Valid = true;
 
             return true;
@@ -286,7 +290,7 @@ namespace Synapse.Crypto.Bybit
         /// Обновляет массивы Asks и Bids при помощи измененных котировок .
         /// </summary>
         /// <param name="ss">Orderbook delta</param>
-        public bool UpdateWithDelta(OrderbookResponse delta)
+        private bool UpdateWithDelta(OrderbookResponse delta)
         {
             string smb = delta.data.s;
 

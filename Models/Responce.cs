@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Synapse.General;
+using Synapse.Crypto.Trading;
 
 namespace Synapse.Crypto.Bybit
 {
@@ -97,7 +98,7 @@ namespace Synapse.Crypto.Bybit
     public class OrderbookResponse : SoketDataResponse
     {
         public string BookType { get; set; }
-        public ContractType ContractType { get; set; }
+        public InstrumentTypes InstrumentType { get; set; }
         public BookData data { get; set; }
     }
 

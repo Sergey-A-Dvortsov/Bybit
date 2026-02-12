@@ -10,6 +10,8 @@ using Newtonsoft.Json;
 using NLog;
 using Synapse.Crypto.Trading;
 using Synapse.General;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -23,8 +25,22 @@ namespace Synapse.Crypto.Bybit
 {
     public class Subscription
     {
+        public string[] Symbols { get; set; }
+        public string SubscriptionId { get; set; }
+        public bool IsSubscribe { get; set; }
         public BybitWebSocket Socket { get; set; }
         public CancellationToken Token { get; set; }
+        public string ConnId { get; set; }
+        public DateTime PongTime { get; set; }
+
+        public TimeSpan PongDelay 
+        { 
+            get => DateTime.UtcNow - PongTime; 
+        }
+        public override string ToString()
+        {
+            return $"SubscriptionId={SubscriptionId},IsSubscribe={IsSubscribe},ConnId={ConnId},PongTime={PongTime}";
+        }
     }
 
     // Copyright(c) [2026], [Sergey Dvortsov]
@@ -42,6 +58,8 @@ namespace Synapse.Crypto.Bybit
         private BookUpdateTaskQueue bookQueue;
 
         public static BybitClient Instance { get; private set; }
+
+        private Timer timer;
 
         public BybitClient()
         {
@@ -100,9 +118,14 @@ namespace Synapse.Crypto.Bybit
         /// </summary>
         public Dictionary<string, Subscription> Subscriptions { get; private set; } = [];
 
+        /// <summary>
+        /// Subscriptions to streaming data
+        /// </summary>
+        public Dictionary<InstrumentTypes, List<Subscription>> BookSubscriptions { get; private set; } = [];
+
         public Dictionary<string, BybitFastBook> FastBooks { get; private set; } = [];
 
-        public Dictionary<string, BybitBook> Books { get; private set; } = [];
+        public ConcurrentDictionary<string, BybitBook> Books { get; private set; } = [];
 
 
         #endregion
@@ -161,6 +184,9 @@ namespace Synapse.Crypto.Bybit
 
                         var calFuts = linFuts.Where(f => f.ContractType == ContractType.LinearFutures).ToList();
 
+                       // var linUSDC = linFuts.Where(f => f.QuoteCoin == "USDC").ToList();
+
+
                         foreach (var item in linFuts)
                         {
                             item.HaveSpot = Securities.Any(s => s.ContractType == ContractType.Spot && s.BaseCoin == item.BaseCoin && s.QuoteCoin == item.QuoteCoin);
@@ -210,6 +236,30 @@ namespace Synapse.Crypto.Bybit
             return null;
 
         }
+
+        public void CheckBookPong(bool action = true)
+        {
+            if (!action) 
+            {
+                timer?.Dispose();
+                return;
+            }
+
+            timer = new Timer(new TimerCallback(t => 
+            { 
+                foreach(var items in BookSubscriptions.Values)
+                {
+                    foreach (var item in items)
+                    {
+                        Logger.Debug("Id={0}, Delay={1}", item.SubscriptionId, item.PongDelay);
+                    }
+                }
+
+            }), 
+                null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(120));   
+        }
+
+
 
         #region candles
 
@@ -546,7 +596,14 @@ namespace Synapse.Crypto.Bybit
 
                 subscriptId ??= $"book.{type}.{depth}"; // if subscription == null
 
-                if (Subscriptions.ContainsKey(subscriptId)) return subscriptId;
+               if (BookSubscriptions.ContainsKey(type))
+               {
+                    if(BookSubscriptions[type].Any(s => s.Symbols.OrderBy(i => i).SequenceEqual(symbols.OrderBy(i => i))))
+                    {
+                        Logger.Warn("Подписка на стакан с аналогичными инструментами уже существует.");
+                        return subscriptId;
+                    }
+                }
 
                 var args = new List<string>();
 
@@ -554,7 +611,12 @@ namespace Synapse.Crypto.Bybit
                 {
                     var symbol = s.ToUpper();
 
-                    string smb = type == InstrumentTypes.Spot ? symbol.Replace("/", "") : symbol;
+                    string smb = symbol;
+
+                    if(type == InstrumentTypes.Spot)
+                        smb = symbol.Replace("/", ""); 
+                    else if (type == InstrumentTypes.LinearPerpetual)
+                        smb = symbol.Replace("USDC", "PERP");
 
                     args.Add($"orderbook.{(int)depth}.{smb}");
 
@@ -562,18 +624,27 @@ namespace Synapse.Crypto.Bybit
                     {
                         if (!FastBooks.ContainsKey(symbol))
                         {
-                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString());
-                            if (sec == null) throw new NullReferenceException($"security: {symbol}");
+                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString()) ??
+                                throw new NullReferenceException($"security: {symbol}");
                             FastBooks.Add(symbol, new BybitFastBook(type, symbol, sec.PriceFilter.TickSize));
                         }
                     }
-                    if (booktype == "book")
+                    else if (booktype == "book")
                     {
                         if (!Books.ContainsKey(symbol))
                         {
-                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString());
-                            if (sec == null) throw new NullReferenceException($"security: {symbol}");
-                            Books.Add(symbol, new BybitBook(type, symbol, sec.PriceFilter.TickSize));
+                            var sec = Securities.FirstOrDefault(x => x.Symbol == smb && x.ContractType == type.ToString()) ?? 
+                                throw new NullReferenceException($"security: {symbol}");
+                            for (var i = 0; i < 10; i ++)
+                            {
+                                if (Books.TryAdd(symbol, new BybitBook(type, symbol, sec.PriceFilter.TickSize, sec.PriceDecimals)))
+                                { break;}
+                                else 
+                                { 
+                                    Task.Delay(100).Wait();
+                                }
+                            }
+
                         }
                     }
 
@@ -583,22 +654,33 @@ namespace Synapse.Crypto.Bybit
 
                 CancellationTokenSource source = new();
                 CancellationToken token = source.Token;
-
+                
                 if (type == InstrumentTypes.Spot)
                 {
                     socket = new BybitSpotWebSocket();
                     socket.OnMessageReceived(async d => await OnSpotBookMessage(d, booktype), token);
                 }
-                else if (type == InstrumentTypes.LinearPerpetual || type == InstrumentTypes.LinearFutures)
+                else if (type == InstrumentTypes.LinearPerpetual)
                 {
                     socket = new BybitLinearWebSocket();
-                    socket.OnMessageReceived(async d => await OnLinearBookMessage(d, booktype), token);
+                    socket.OnMessageReceived(async d => await OnLinearPerpetualBookMessage(d, booktype), token);
                 }
-                else if (type == InstrumentTypes.InversePerpetual || type == InstrumentTypes.InverseFutures)
+                else if (type == InstrumentTypes.LinearFutures)
+                {
+                    socket = new BybitLinearWebSocket();
+                    socket.OnMessageReceived(async d => await OnLinearFuturesBookMessage(d, booktype), token);
+                }
+                else if (type == InstrumentTypes.InversePerpetual)
                 {
                     socket = new BybitInverseWebSocket();
-                    socket.OnMessageReceived(async d => await OnInverseBookMessage(d, booktype), token);
+                    socket.OnMessageReceived(async d => await OnInversePerpetualBookMessage(d, booktype), token);
                 }
+                else if (type == InstrumentTypes.InverseFutures)
+                {
+                    socket = new BybitInverseWebSocket();
+                    socket.OnMessageReceived(async d => await OnInverseFuturesBookMessage(d, booktype), token);
+                }
+
                 else
                     //socket = new BybitOptionWebSocket();
 
@@ -606,9 +688,18 @@ namespace Synapse.Crypto.Bybit
 
                 await socket.ConnectAsync([.. args], token);
 
-                var subscription = new Subscription() { Socket = socket, Token = token };
+                var subscription = new Subscription() {SubscriptionId = subscriptId, Symbols = symbols, Socket = socket, Token = token };
 
-                Subscriptions.Add(subscriptId, subscription);
+                //Subscriptions.Add(subscriptId, subscription);
+
+                if (!BookSubscriptions.TryGetValue(type, out List<Subscription>? value))
+                {
+                    BookSubscriptions.Add(type, [subscription]);
+                }
+                else
+                {
+                    value.Add(subscription);
+                }
 
                 return subscriptId;
 
@@ -626,44 +717,6 @@ namespace Synapse.Crypto.Bybit
             throw new NotImplementedException();
         }
 
-        async Task ProcessUpdate(OrderbookResponse update)
-        {
-            string symbol = update.data.s;
-
-            if (update.ContractType == ContractType.Spot)
-                symbol = Helpers.GetSpotSymbol(symbol);
-
-
-            if(update.BookType == "fast")
-            {
-                if (FastBooks[symbol].Update(update))
-                    OnFastBookUpdate(FastBooks[symbol]);
-            }
-            else if (update.BookType == "book")
-            {
-                if (Books[symbol].Update(update))
-                    OnOrderBookUpdate(Books[symbol]);
-            }
-
-        }
-
-        //    var spotWebsocket = new BybitSpotWebSocket(true);
-        //    spotWebsocket.OnMessageReceived(
-        //        (data) =>
-        //{
-        //    Console.WriteLine(data);
-
-            //    return Task.CompletedTask;
-            //}, CancellationToken.None);
-
-            //    await spotWebsocket.ConnectAsync(new string[] { "orderbook.50.BTCUSDT" }, CancellationToken.None);
-
-
-            /// <summary>
-            /// Unsubscribes from a web socket channel.
-            /// </summary>
-            /// <param name="subscriptId">Subscription identificator</param>
-            /// <returns></returns>
         public async Task Unsubscribe(string subscriptId)
         {
             if (Subscriptions.TryGetValue(subscriptId, out Subscription? subscription))
@@ -685,131 +738,65 @@ namespace Synapse.Crypto.Bybit
             Subscriptions.Clear();
         }
 
+        #endregion
+
+        #region orderbook processing
+
+        async Task ProcessUpdate(OrderbookResponse update)
+        {
+            string symbol = update.data.s;
+
+            if (update.InstrumentType == InstrumentTypes.Spot)
+                symbol = Helpers.GetSpotSymbol(symbol);
+            else if(update.InstrumentType == InstrumentTypes.LinearPerpetual)
+                symbol = symbol.Replace("PERP", "USDC");
+
+            if (update.BookType == "fast")
+            {
+                if (FastBooks[symbol].Update(update))
+                    OnFastBookUpdate(FastBooks[symbol]);
+            }
+            else if (update.BookType == "book")
+            {
+
+                if (Books.TryGetValue(symbol, out BybitBook book))
+                {
+                    if (book.Update(update))
+                        OnOrderBookUpdate(book);
+                }
+                else 
+                {
+                    Logger.Warn($"Не смог выполнить Update для {symbol}.");
+                }
+                    
+            }
+
+        }
+
         private Task OnSpotBookMessage(string data, string booktype)
         {
-            try
-            {
-
-                if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
-                {
-                    var resp = JsonConvert.DeserializeObject<OrderbookResponse>(data);
-
-                    if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                    bookQueue ??= new();
-
-                    resp.BookType = booktype;
-                    resp.ContractType = ContractType.Spot;
-
-                    bookQueue.Enqueue(resp, ProcessUpdate);
-
-                }
-                else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
-                {
-                    var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
-
-                    if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                    if (resp.success)
-                    {
-                        switch (resp.op)
-                        {
-                            case "subscribe":
-                                {
-                                    break;
-                                }
-                            case "ping":
-                                {
-                                    break;
-                                }
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception(resp.ret_msg);
-                    }
-
-                }
-                else
-                {
-                    throw new Exception(data);
-                }
-
-
-            }
-            catch (Exception ex)
-            {
-                Logger.ToError(ex);
-            }
-
-            return Task.CompletedTask;
+            return OnBookMessage(data, InstrumentTypes.Spot, booktype);
         }
 
-        private Task OnLinearBookMessage(string data, string booktype)
+        private Task OnLinearPerpetualBookMessage(string data, string booktype)
         {
-            try
-            {
-
-                if (data.Contains("topic") && data.Contains("type") && data.Contains("ts"))
-                {
-                    var resp = JsonConvert.DeserializeObject<OrderbookResponse>(data);
-
-                    if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                    resp.BookType = booktype;
-                    resp.ContractType = ContractType.LinearPerpetual;
-                    if (resp.data.s.Contains("-"))
-                        resp.ContractType = ContractType.LinearFutures;
-
-                    bookQueue ??= new();
-                    bookQueue.Enqueue(resp, ProcessUpdate);
-
-                }
-                else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
-                {
-                    var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
-
-                    if (resp == null) throw new NullReferenceException(nameof(resp));
-
-                    if (resp.success)
-                    {
-                        switch (resp.op)
-                        {
-                            case "subscribe":
-                                {
-                                    break;
-                                }
-                            case "ping":
-                                {
-                                    break;
-                                }
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception(resp.ret_msg);
-                    }
-
-                }
-                else
-                {
-                    throw new Exception(data);
-                }
-
-            }
-            catch (Exception ex)
-            {
-                Logger.ToError(ex);
-            }
-
-            return Task.CompletedTask;
+            return OnBookMessage(data, InstrumentTypes.LinearPerpetual, booktype);
+        }
+        private Task OnLinearFuturesBookMessage(string data, string booktype)
+        {
+            return OnBookMessage(data, InstrumentTypes.LinearFutures, booktype);
+        }
+        private Task OnInversePerpetualBookMessage(string data, string booktype)
+        {
+            return OnBookMessage(data, InstrumentTypes.InversePerpetual, booktype);
         }
 
-        private Task OnInverseBookMessage(string data, string booktype)
+        private Task OnInverseFuturesBookMessage(string data, string booktype)
+        {
+            return OnBookMessage(data, InstrumentTypes.InverseFutures, booktype);
+        }
+
+        private Task OnBookMessage(string data, InstrumentTypes type, string booktype)
         {
             try
             {
@@ -821,18 +808,13 @@ namespace Synapse.Crypto.Bybit
                     if (resp == null) throw new NullReferenceException(nameof(resp));
 
                     bookQueue ??= new();
-
                     resp.BookType = booktype;
-                    resp.ContractType = ContractType.InversePerpetual;
-
-                    if (resp.data.s.Contains("-"))
-                        resp.ContractType = ContractType.InverseFutures;
-
+                    resp.InstrumentType = type;
                     bookQueue.Enqueue(resp, ProcessUpdate);
-
                 }
                 else if (data.Contains("success") && data.Contains("conn_id") && data.Contains("op"))
                 {
+
                     var resp = JsonConvert.DeserializeObject<SoketSubscribeResponse>(data);
 
                     if (resp == null) throw new NullReferenceException(nameof(resp));
@@ -843,10 +825,28 @@ namespace Synapse.Crypto.Bybit
                         {
                             case "subscribe":
                                 {
-                                    break;
+                                    Logger.Debug(data);
+
+                                    if (BookSubscriptions.TryGetValue(type, out List<Subscription>? value))
+                                  {
+                                        var subsc = value.FirstOrDefault(s => !s.IsSubscribe);
+                                        if(subsc != null)
+                                        {
+                                            subsc.IsSubscribe = true;
+                                            subsc.ConnId = resp.conn_id;
+                                            subsc.PongTime = DateTime.UtcNow;
+                                            Logger.Debug(subsc);
+                                        }
+                                  }
+                                  break;
                                 }
                             case "ping":
                                 {
+                                    if (BookSubscriptions.TryGetValue(type, out List<Subscription>? value))
+                                    {
+                                        var subsc = value.FirstOrDefault(s => s.ConnId == resp.conn_id);
+                                        subsc?.PongTime = DateTime.UtcNow;
+                                    }
                                     break;
                                 }
                             default:
@@ -855,15 +855,16 @@ namespace Synapse.Crypto.Bybit
                     }
                     else
                     {
+                        Logger.Debug(data);
                         throw new Exception(resp.ret_msg);
                     }
 
                 }
                 else
                 {
+                    Logger.Debug(data);
                     throw new Exception(data);
                 }
-
             }
             catch (Exception ex)
             {
@@ -873,6 +874,7 @@ namespace Synapse.Crypto.Bybit
             return Task.CompletedTask;
         }
 
+        #endregion
 
         //var privateWebsocket = new BybitPrivateWebsocket(apiKey: "xxxxxxxxx", apiSecret: "xxxxxxxxxx", useTestNet: true, debugMode: true);
         //privateWebsocket.OnMessageReceived(
@@ -895,7 +897,7 @@ namespace Synapse.Crypto.Bybit
         //var positionInfo = await positionService.GetPositionInfo(category: Category.LINEAR, symbol: "BLZUSDT");
         //Console.WriteLine(positionInfo);
 
-        #endregion
+
 
     }
 }
