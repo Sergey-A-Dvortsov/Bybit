@@ -245,7 +245,20 @@ namespace Synapse.Crypto.Bybit
             return false;
         }
 
-        
+
+        //public Quote? BestBid
+        //{
+        //    get
+        //    {
+        //        lock (_lock)
+        //        {
+        //            if (Bids.Count == 0) return null;
+        //            var bid = Bids.First();
+        //            return new Quote(bid.Key, bid.Value);
+        //        }
+        //    }
+        //}
+
 
         /// <summary>
         /// Полностью обновляет массивы Asks и Bids при помощи снапшота книги заявок.
@@ -268,10 +281,18 @@ namespace Synapse.Crypto.Bybit
                 Asks.Add(Math.Round(asks[i][0],Decimals), asks[i][1]);
             }
 
+            var ask = Asks.First();
+            BestAsk = new Quote(ask.Key, ask.Value);
+
+            Bids.Clear();
+
             for (int i = 0; i < bids.Length; i++)
             {
                 Bids.Add(Math.Round(bids[i][0], Decimals), bids[i][1]);
             }
+
+            var bid = Bids.First();
+            BestBid = new Quote(bid.Key, bid.Value);
 
             logger.Debug($"UpdateWithSnapshot.{ss.data.s},Asks.Count={Asks.Count}, Bids.Count={Bids.Count}");
 
@@ -314,12 +335,17 @@ namespace Synapse.Crypto.Bybit
 
                 updateNum = delta.data.u;
 
+                bool bestAskChanged = false;    
+
                 for (int i = 0; i < asks.Length; i++)
                 {
 
+                    if(asks[i][0] <= BestAsk?.Price)
+                        bestAskChanged = true;
+
                     //tag = $"{smb},i={i},asks.Length={asks.Length},idx={idx},Asks.Length={Asks.Length}";
 
-                    if(Asks.ContainsKey(asks[i][0]))
+                    if (Asks.ContainsKey(asks[i][0]))
                     {
                         if(asks[i][1] != 0)
                             Asks[asks[i][0]] = asks[i][1];
@@ -334,8 +360,19 @@ namespace Synapse.Crypto.Bybit
 
                 }
 
+                if(bestAskChanged)
+                {
+                    var ask = Asks.First();
+                    BestAsk = new Quote(ask.Key, ask.Value);
+                }
+
+                bool bestBidChanged = false;
+
                 for (int i = 0; i < bids.Length; i++)
                 {
+                    if (bids[i][0] >= BestBid?.Price)
+                        bestBidChanged = true;
+
                     if (Bids.ContainsKey(bids[i][0]))
                     {
                         if (bids[i][1] != 0)
@@ -349,6 +386,12 @@ namespace Synapse.Crypto.Bybit
                             Bids.Add(Math.Round(bids[i][0], Decimals), bids[i][1]);
                     }
 
+                }
+
+                if (bestBidChanged)
+                {
+                    var bid = Bids.First();
+                    BestBid = new Quote(bid.Key, bid.Value);
                 }
 
                 return true;
